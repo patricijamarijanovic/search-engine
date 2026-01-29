@@ -36,16 +36,40 @@ def search(query: str, num_results: int = 10) -> SearchResponse:
         content: str =  document["text"]
 
         results.append(Document(id=doc_id, title=title, content=content, best_snippet=best_snippet))
+        
+    answer = None
+    improved_query = None
 
-    if _rag_agent.check_if_its_question(query).lower() == "yes":
-        answer = _rag_agent.answer_question_with_document(query, results[0].content)
-        print(f"Answer to question: {answer}")
-    else:
-        answer = None
-    
-    improved_query: str | None = _rag_agent.improve_query_if_needed(query)
+    try:
+        # Pokušavamo dobiti odgovor od AI-a
+        is_question = _rag_agent.check_if_its_question(query).lower()
+        
+        if "yes" in is_question:  # Ponekad vrati "Yes." pa je bolje provjeriti sadrži li "yes"
+            # Koristimo prvi (najrelevantniji) dokument za odgovor
+            if results:
+                answer = _rag_agent.answer_question_with_document(query, results[0].content)
+                print(f"Answer to question: {answer}")
+        
+        improved_query = _rag_agent.improve_query_if_needed(query)
+
+    except Exception as e:
+        # Ako Google API (Gemini) vrati grešku (npr. 503 Overloaded), samo ispiši u konzolu
+        # Aplikacija nastavlja dalje i vraća rezultate pretrage bez AI odgovora
+        print(f"⚠️ AI Service Error (ignorirano): {e}")
+
+    # --- KRAJ PROMJENE ---
 
     return SearchResponse(results=results, answer=answer, improved_query=improved_query)
+
+    # if _rag_agent.check_if_its_question(query).lower() == "yes":
+    #     answer = _rag_agent.answer_question_with_document(query, results[0].content)
+    #     print(f"Answer to question: {answer}")
+    # else:
+    #     answer = None
+    
+    # improved_query: str | None = _rag_agent.improve_query_if_needed(query)
+
+    # return SearchResponse(results=results, answer=answer, improved_query=improved_query)
 
 
 @router.get("/search_like")

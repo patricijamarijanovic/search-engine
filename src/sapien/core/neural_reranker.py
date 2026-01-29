@@ -1,4 +1,4 @@
-# dodatak za patricijin komp, obrisi sebi poslije ak ce smetat
+
 import os
 from time import time
 
@@ -16,7 +16,7 @@ class NeuralReranker:
         # print(torch.version.cuda)
         # print(f"Cuda available: {torch.cuda.is_available()}")
 
-        # dodatak za patricijin komp, obrisi sebi poslije ak ce smetat
+        
         torch.set_num_threads(1)
         device = "cuda" if torch.cuda.is_available() else "cpu"
         # Na Macu je često bolje ostati na CPU za male modele ako MPS radi probleme

@@ -1,101 +1,97 @@
-# "Sapien" - Search Engine Project
+# Portuguese Wikipedia Search & RAG Engine
 
-IMPORTANT: Each group should pick a name for its project. "sapien" is just a template.
+A retrieval system built from scratch for the **Portuguese Wikipedia (2.7M articles)**. The system features a memory-optimized **SPIMI indexer** (running under strict 2GB RAM constraints) and a **Hybrid Search** pipeline that combines lexical retrieval with semantic reranking and Generative AI (RAG).
 
-This project implements a search engine called "Sapien" with both a REST API for searching and a CLI interface for indexing. It's built with strict typing, linting, and memory constraints to ensure high-quality, efficient code.
+**What does this engine do?**
+1.  **Ingests Massive Data:** It processes raw Wikipedia dumps (`.arrow` or `.jsonl`) using a custom **SPIMI (Single-Pass In-Memory Indexing)** algorithm, managing memory manually to prevent crashes on consumer hardware.
+2.  **Understands Queries:** It combines **BM25 lexical search** (finding exact keyword matches) with **Neural Reranking** (using Cross-Encoders to understand semantic meaning), ensuring the most relevant results float to the top.
+3.  **Answers Questions (RAG):** Instead of just giving you links, the system uses a **Retrieval-Augmented Generation** pipeline. It feeds the best search results into Google's **Gemini AI**, which reads the context and answers user questions naturally (e.g., *"Who discovered Brazil?"*) without hallucinations.
 
-## Prerequisites
+---
 
-- uv (install from https://docs.astral.sh/uv/getting-started/installation/)
+## Key Features
 
-## Setup
+### 1. Memory-Constrained Indexing (SPIMI)
+Built to process massive datasets on consumer hardware:
+- **Custom SPIMI Implementation:** Processes the 2.7M article dump using Single-Pass In-Memory Indexing.
+- **Resource Monitor:** A background daemon (`MemoryGuard`) actively monitors RSS usage and forces disk flushes if RAM usage exceeds **2GB**, preventing OOM crashes.
+- **Binary Offset Indexing:** Optimizes retrieval speed by using a lightweight offset lookup table instead of loading the full inverted index into memory.
 
-1. Install dependencies:
-   ```bash
-   uv sync
-   ```
+### 2. Hybrid Retrieval Pipeline
+- **Lexical Search (Stage 1):** BM25 algorithm implemented with optimized sparse matrix operations for initial candidate retrieval (Top-100).
+- **Neural Reranking (Stage 2):** Uses a Cross-Encoder (`mmarco-mMiniLMv2-L12-H384-v1`) to semantically re-rank documents, significantly improving precision for natural language queries.
+- **Smart Snippet Extraction:** Instead of passing full documents to the LLM, the system identifies and extracts the single most relevant paragraph.
 
-2. You don't need to activate the environment manually. Just let `uv` handle the activation automatically by prefixing your commands with `uv run`.
+### 3. RAG Agent (Gemini API)
+Integrates Google's **Gemini 2.5 Flash** to provide grounded answers:
+- **Query Intent Classification:** Detects if the user input is a specific question or a broad keyword search.
+- **Hallucination Reduction:** Answers are strictly grounded in the retrieved Wikipedia context.
+- **Query Expansion:** Automatically suggests improved queries for misspelled or ambiguous terms (e.g., *"stats cr7"* → *"Estatísticas de Cristiano Ronaldo"*).
 
-3. Install pre-commit hooks (runs linting on every commit):
-   ```bash
-   uv run pre-commit install
-   ```
+---
 
-## Project Organization
+## Architecture
 
-The project is organized into several key components:
+```mermaid
+graph LR
+    User[User Query] --> API[FastAPI Gateway]
+    API --> BM25[1. BM25 Search]
+    BM25 --> Top100[Top 100 Docs]
+    Top100 --> Rerank[2. Neural Reranking]
+    Rerank --> Top10[Top 10 Docs]
+    Top10 --> Intent{3. Is Question?}
+    Intent -- Yes --> GenAI[4. Gemini RAG]
+    Intent -- No --> Response[Final JSON]
+    GenAI --> Response
 
 ```
-src/sapien/
-├── core/                    # Core models and utilities
-│   ├── model.py            # Document data models (Pydantic)
-│   └── limit_memory.py     # Memory monitoring utilities
-├── entrypoints/            # Application entry points
-│   ├── api/               # FastAPI REST API
-│   │   ├── app.py        # FastAPI application setup
-│   │   ├── model.py      # API request/response models
-│   │   └── routes/       # API route handlers
-│   │       ├── search.py      # Search endpoints
-│   │       └── healthcheck.py # Health check endpoint
-│   ├── cli.py            # Command-line indexer interface
-│   └── asgi.py           # ASGI server entry point
-static_pages/             # static webpage that interacts with your search engine via REST
+
+## Installation & Setup
+
+This project uses `uv` for modern, fast Python dependency management.
+
+### 1. Clone the repository
+```bash
+git clone [https://github.com/patricijamarijanovic/search-engine.git](https://github.com/patricijamarijanovic/search-engine.git)
+cd search-engine
 ```
 
-### Key Entrypoints:
+### 2. Install Dependencies
+```bash
+uv sync
+```
 
-- **REST API**: FastAPI-based search interface accessible at `/api/v1/search/`
-- **CLI Indexer**: Command-line tool for building search indices with memory limiting (≤2GB)
+### 3. Configure Environment
+The system requires a Google Gemini API key for the AI features.
+
+1. Copy the example config:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Open `.env` and paste your key (Get one at [Google AI Studio](https://aistudio.google.com/)):
+   ```bash
+   GEMINI_API_KEY=your_actual_api_key_here
+   ```
+
+## Data 
+
+Due to the size of the full index (~6GB), the artifacts are not hosted directly on GitHub.
+
+1. Download the index artifacts from: **[www.kaggle.com/datasets/patricijamarijanovi/search-index]**
+2. Extract the files (`final_index.jsonl`, `forward_index.db`, etc.) into the `output/` directory in the project root.
 
 ## Usage
 
-### Running the Search API
+### Start the Search API
+Run the FastAPI server with hot-reloading:
 
-Start the FastAPI server:
 ```bash
 uv run uvicorn sapien.entrypoints.asgi:app --reload
 ```
-- **Static Web Interface**: `http://localhost:8000`
-- **API docs**: `http://localhost:8000/docs`
 
-### Running the CLI Indexer
+### Accessing the Interface
 
-The CLI indexer runs with memory monitoring enabled to enforce the 2GB memory limit:
-```bash
-uv run cli [arguments]
-```
-OR
-```bash
-uv run src/sapien/entrypoints/cli [arguments]
-```
-
-**Note**: The CLI automatically starts memory monitoring, which must be included as part of the assignment.
-Each group must be able to develop an indexer with memory constraints.
-
-## Development Best Practices
-
-### Code Quality
-
-This project enforces strict code quality standards:
-
-- **Type Checking**: Full type annotation coverage with Pyright
-- **Linting**: Ruff with comprehensive rule set (100-char line limit)
-- **Formatting**: Automatic code formatting with Ruff
-- **Import Sorting**: Organized imports with isort integration
-
-### Git Workflow
-
-1. **Make frequent commits**: Pre-commit hooks run type checking and linting automatically
-2. **Follow the enforced standards**: The project uses strict linting rules for consistency
-3. **Test before committing**: All code is validated before entering the repository
-
-### Skipping Pre-commit Hooks
-
-⚠️ **NOT RECOMMENDED!**
-
-This repository includes pre-commit hooks that verify and standardize code before committing. However, if you're close to a deadline and need to bypass them temporarily:
-
-```bash
-git commit --no-verify -m "Your commit message"
-```
+Once the server is running, you can interact with the search engine:
+   Open **[http://127.0.0.1:8000](http://127.0.0.1:8000)** in your browser.
+   This is the main interface where you can type queries and view results with the AI-generated answer at the top.
